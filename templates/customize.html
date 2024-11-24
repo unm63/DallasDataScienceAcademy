@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Customize Grant Application</title>
+    <link rel="stylesheet" href="static/style.css">
+</head>
+<body>
+    <h1>Customize Your Grant Application</h1>
+    <div id="editable-text" contenteditable="true">{{ generated_text }}</div>
+    <!-- <textarea id="customized_text" name="customized_text">{{ generated_text }}</textarea> -->
+    <br>
+    <form action="/download" method="POST">
+        <!-- <input type="hidden" name="customized_text" value="{{ generated_text }}"> -->
+        <input type="hidden" name="customized_text" id="hidden_text">
+        <label>Choose Download Format:</label>
+        <input type="radio" name="format" value="docx" checked> Word (.docx)
+        <input type="radio" name="format" value="pdf"> PDF (.pdf)
+        <br>
+        <button type="submit">Download</button>
+    </form>
+    <script>
+        // JavaScript to update the hidden input when the editable div changes
+        document.getElementById('editable-text').addEventListener('input', function() {
+            document.getElementById('hidden_text').value = this.textContent;
+        });
+    </script>
+</body>
+</html>

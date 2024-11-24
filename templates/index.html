@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Grant Application Tool</title>
+    <link rel="stylesheet" href="static/style.css">
+</head>
+<body>
+    <h1>Grant Application Tool</h1>
+    <form action="/upload" method="POST" enctype="multipart/form-data">
+        <label for="document">Upload Document:</label>
+        <input type="file" id="document" name="document">
+        <br>
+        <label for="grant-purpose">Grant Purpose:</label>
+        <textarea id="grant-purpose" name="grant_purpose"></textarea>
+        <br>
+        <label for="target-audience">Target Audience:</label>
+        <textarea id="target-audience" name="target_audience"></textarea>
+        <br>
+        <label for="required-funds">Required Funds:</label>
+        <input type="number" id="required-funds" name="required_funds">
+        <br>
+        <button type="submit">Submit</button>
+    </form>
+</body>
+</html>
