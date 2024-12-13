@@ -1,4 +1,6 @@
-from flask import Flask, render_template, request, send_file, jsonify
+import textwrap
+
+from flask import Flask, render_template, request, send_file, jsonify, url_for
 from fpdf import FPDF
 import PyPDF2
 import docx
@@ -8,7 +10,7 @@ import os
 import google.generativeai as genai
 import logging
 import requests
-import tensorflow as tf
+#import tensorflow as tf
 import pinecone
 from transformers import pipeline
 import google.generativeai as genai
@@ -18,56 +20,62 @@ from pinecone import Pinecone
 from transformers import AutoTokenizer, AutoModel
 import tensorflow_hub as hub
 from flask import send_from_directory
+from bs4 import BeautifulSoup
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaFileUpload
+from google.oauth2.service_account import Credentials
+import json
+import markdown
+import pandoc
+#from fpdf import FPDF
+#from bs4 import BeautifulSoup
+#from docx import Document
+#from docx.shared import Inches
+#from weasyprint import HTML
+import pdfkit
+#import retool
+import re
+
+
+
 #from pinecone import Pinecone
 
-# Initialize the Pinecone client
-#pinecone = Pinecone()
+apikey = input("Type in the Gemini API Key: ")
+SCOPES = ['https://www.googleapis.com/auth/drive']
+jsonfile = input("Type in name of Json file: ")
+creds = Credentials.from_service_account_file(jsonfile, scopes = SCOPES)
+#print("data", data)
+service = build('drive', 'v3', credentials=creds)
 
-# Initialize the index
-#pinecone.init(
-#    api_key="27c95e1e-4a0c-4dd3-b430-60a3a037eabe",
-#    environment="us-east-1"
-#)
 
-# Get a reference to the index
-#index = pinecone.Index("projectindex")
+def upload_to_drive(filename, mimetype, parent_folder_id):
+    print("working")
+    file_metadata = {'name': filename, 'mimeType': mimetype, 'parents': [parent_folder_id]}
+    print("still working", file_metadata)
+    media = MediaFileUpload(filename, mimetype=mimetype, resumable=True)
+    print("STILL WORKING", media)
+    file = service.files().create(body=file_metadata, media_body=media, fields='id').execute()
+    print("YES", file)
+    file_id = file.get('id')
+    # Create a permission to make the file publicly accessible
+    permission = {
+        'type': 'anyone',
+        'role': 'reader'
+    }
+    file_permission = service.permissions().create(fileId=file_id, body=permission).execute()
+    print("permission works!")
+    # Get the public shareable link
+    file = service.files().get(fileId=file_id, fields='webViewLink').execute()
+    public_url = file.get('webViewLink')
+    print("public url", public_url)
+    return public_url
+    # Publicly accessible download link
 
-#embed = hub.KerasLayer("https://tfhub.dev/google/universal-sentence-encoder-multilingual/3")
 
-#def embed_text(text):
-#    embeddings = embed([text])
-#    return embeddings[0]
 
-# Download and load the pre-trained model weights (complex process)
-#model_weights_url = "https://url_to_model_weights.h5"
-#model = tf.keras.models.load_model(model_weights_url)
 
-#def embed_text(text):
-    # Pre-process and feed text to the model (complex process)
-#    embeddings = model.predict(text)
-#    return embeddings[0]
-
-#pinecone = Pinecone()
-#pc = Pinecone(api_key="27c95e1e-4a0c-4dd3-b430-60a3a037eabe")
-#index = pc.Index("quickstart")
-#pinecone.init(
-#    api_key="27c95e1e-4a0c-4dd3-b430-60a3a037eabe",  # Replace with your Pinecone API key
-#    environment="us-east-1"  # Replace with your Pinecone environment
-#)
-
-#index_name = "projectindex"
-#dimension = 1536  # Adjust based on your embedding model
-
-#index = pinecone.Index(index_name)
-
-#def upload_to_pinecone(text, doc_id):
-#    vector = embed_text(text)
-#    metadata = {"source": "uploaded_document"}
-#    index.upsert(vectors=[vector], ids=[doc_id], metadatas=[metadata])
-
-# Replace with your Hugging Face API key
-#HUGGINGFACE_API_KEY = "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"
-genai.configure(api_key="AIzaSyBKIplJ67voBYHIlSBbjGCfzppbQLPldTw")
+# Replace with your Gemini API key
+genai.configure(api_key=apikey)
 model = genai.GenerativeModel("gemini-pro")
 
 app = Flask(__name__, static_folder='static')
@@ -84,11 +92,12 @@ def index():
 
 @app.route('/upload', methods=['POST'])
 def upload():
+    print("WORKING")
     document = request.files['document']
     grant_purpose = request.form['grant_purpose']
     target_audience = request.form['target_audience']
     required_funds = request.form['required_funds']
-
+    print("anything")
     try:
         if document:
             print("EXISTS")
@@ -118,7 +127,14 @@ def upload():
             #return render_template('customize.html', generated_text=generated_text)
             # Instead of rendering a template, use Retool app state
             #retool.state.set('generatedText', generated_text)
-            return jsonify({'generated_text': generated_text})
+            #return jsonify({'generated_text': f"{generated_text.replace('\n', '<br>')}"})
+            #return f"{generated_text.replace('\n', '<br>')}"
+            #return markdown.markdown(generated_text, output_format = "html")
+            #print(markdown.markdown(generated_text))
+            return markdown.markdown(generated_text)
+            #doc = pandoc.Document()
+            #doc.html = html
+            #return doc.rtf
             #return "Text extracted and grant application generation initiated."  # Informative message
         else:
             return "No file uploaded"
@@ -127,18 +143,17 @@ def upload():
         return "An error occurred while processing the document."
 
 
-
-
-@app.route('/download', methods=['POST', 'GET'])
+@app.route('/download', methods=['POST'])
 def download():
     print("Downloading")
-    if request.method == 'GET':
-        customized_text = request.args.get('customized_text')
-        file_format = request.args.get('format')
-        print(customized_text)
-        print(file_format)
-    elif request.method == 'POST':
+    if request.method == 'POST':
+        print("posting")
         customized_text = request.form['customized_text']
+        soup = BeautifulSoup(customized_text, 'html.parser')
+        #customized_text = html_to_plain_text(customized_text)
+        #customized_text = BeautifulSoup(customized_text, 'html.parser').get_text()
+        #customized_text = request.form['generated_text']
+        print("customized text", customized_text)
         file_format = request.form['format']
         print(customized_text)
         print(file_format)
@@ -150,52 +165,89 @@ def download():
 
     if file_format == 'docx':
         # Generate and download Word document
+        #document = Document()
         doc = docx.Document()
-        doc.add_paragraph(customized_text)
+        current_paragraph = None
+
+        for element in soup.find_all(['p', 'h1', 'h2', 'h3', 'ul', 'ol', 'li', 'strong', 'i']):
+            if element.name == 'p':
+                current_paragraph = doc.add_paragraph()
+                current_paragraph.add_run(element.text)
+            elif element.name in ['h1', 'h2', 'h3']:
+                current_paragraph = doc.add_paragraph(element.text)
+                current_paragraph.style = 'Heading 1'  # Adjust heading style as needed
+            elif element.name in ['strong', 'b']:
+                if current_paragraph:
+                    current_paragraph.add_run(element.text).bold = True
+                else:
+                    current_paragraph = doc.add_paragraph(element.text)
+                    current_paragraph.style = 'Strong'  # Adjust style as needed
+            elif element.name == 'i':
+                if current_paragraph:
+                    current_paragraph.add_run(element.text).italic = True
+                else:
+                    current_paragraph = doc.add_paragraph(element.text)
+                    current_paragraph.style = 'Italic'  # Adjust style as needed
+            elif element.name == 'ul' or element.name == 'ol':
+                for li in element.find_all('li'):
+                    p = doc.add_paragraph(u'\u2022 ' + li.text)
+                    current_paragraph = p
+        #doc.add_paragraph(customized_text)
         doc.save('generated_grant_application.docx')
-        return send_file('generated_grant_application.docx', as_attachment=True)
+        download_url = upload_to_drive('generated_grant_application.docx',
+                                       'application/vnd.openxmlformats-officedocument.wordprocessingml.document', '1GKkY0NIUZIglTZg7iUtuqv3iKvxYGFmj')
+        #return "C:/Users/ujwal/PyCharmProjects/LLMProject/generated_grant_application.docx"
+        #return send_file('generated_grant_application.docx', as_attachment=True)
         #return send_from_directory('generated_grant_application.docx', as_attachment=True)
+        return jsonify({'download_url': download_url})
     elif file_format == 'pdf':
         # Generate and download PDF document
-        pdf = FPDF()
+        pdf = FPDF(orientation='P', unit='mm', format='A4')
         pdf.add_page()
         pdf.set_font("Arial", size=12)
-        pdf.multi_cell(0, 10, customized_text)
+
+        for element in soup.find_all(['p', 'h1', 'h2', 'h3', 'ul', 'ol', 'li', 'strong']):
+            if element.name in ['h1', 'h2', 'h3']:
+                pdf.set_font("Arial", size=14 if element.name == 'h1' else 12, style='B')
+                pdf.cell(0, 10, element.text, ln=1)
+            elif element.name == 'p':
+                pdf.set_font("Arial", size=12)
+                pdf.multi_cell(0, 10, element.text)
         pdf.output('generated_grant_application.pdf')
-        return send_file('generated_grant_application.pdf', as_attachment=True)
-        #return send_from_directory('generated_grant_application.docx', as_attachment=True)
+        #HTML(string=customized_text).write_pdf("generated_grant_application.pdf")
+        #pdfkit.from_string(customized_text, 'generated_grant_application.pdf')
+        print("So far so good!!!")
+        # Save the file to the static folder
+        #file_path = os.path.join('static', 'generated_document.pdf')  # Replace with appropriate filename
+        #pdf.output(file_path)
+        #pdfkit.from_string(customized_text, "generated_grant_application.pdf")
+
+        # Return the download URL
+        download_url = upload_to_drive('generated_grant_application.pdf', 'application/pdf', '1GKkY0NIUZIglTZg7iUtuqv3iKvxYGFmj')
+        return jsonify({'download_url': download_url})
     else:
         return "Invalid format"
 
 
 def generate_grant_application(text, grant_purpose, target_audience, required_funds):
-    # Load LLM pipeline (adjust model name as needed)
-    #nlp = pipeline("text-generation", model="gpt2")
-    # Vectorize the text
-    #vector = embed_text(text)
-
-    # Query Pinecone for similar documents
-    #query_results = index.query(vector=vector, top_k=5)
-    #similar_texts = [result['metadata']['text'] for result in query_results['matches']]
-    #prompt1 = f"""Write a grant application with these using {text}, {grant_purpose}, {required_funds}, {target_audience} as inputs"""
     # Create the prompt with user input
     prompt = f"""
     Write a grant application based on the following information, excluding this prompt itself:
 
-    **Document Text:**
+    Document Text:
     {text}
 
-    **Grant Purpose:**
+    Grant Purpose:
     {grant_purpose}
 
-    **Target Audience:**
+    Target Audience:
     {target_audience}
 
-    **Required Funds:**
+    Required Funds:
     {required_funds}
 
     The grant application should include the following sections:
-    Title (in bold and in bigger font than the rest)
+    Title
     1. Introduction
     2. Project Description
     3. Objectives
@@ -204,14 +256,9 @@ def generate_grant_application(text, grant_purpose, target_audience, required_fu
     6. Evaluation
     7. Conclusion
     
-    I want each of the sections to be on a new line, in bold font, and centered on the page. 
-    
-    **Ensure the following formatting:**
 
-    * **Section Headers:** Bold and centered
-    * **Body Text:** Normal font
-
-    Ensure the application is well-structured, coherent, and persuasive. I want to see all 7 of the above sections.
+    Ensure the application is well-structured, coherent, and persuasive. I want to see all 7 of the above sections. 
+    Nothing should be in bold or surrounded by asterisks apart from the bullet points.
     """
 
     print(text)
@@ -219,80 +266,11 @@ def generate_grant_application(text, grant_purpose, target_audience, required_fu
     print(target_audience)
     print(required_funds)
 
-    # Set authorization header
-    #headers = {"Authorization": f"Bearer {HUGGINGFACE_API_KEY}"}
-
-    # Prepare data for LLM (modify prompt if needed)
-    #data = {"inputs": prompt, "max_length": 2048}
-
-    # Send request to Hugging Face Inference API
-    #response = requests.post(
-    #    "https://api-inference.huggingface.co/models/gpt2", headers=headers, json=data
-    #)
-
-    # Extract generated summary
-    #generated_text = response.json()["generated_texts"][0]
-    #response_data = response.json()
     response = model.generate_content(prompt)
-    #print(response_data)
-    #print("GOOD")
-    #print(type(response_data))
-    #print(response_data[0])
-    #print(response_data[0]["generated_text"])
-    #generated_text = response_data[0]["generated_text"]
-    #print("generated_text")
-    #if "generated_text" in response_data:
-    #    print("It's in")
-    #    generated_text = response_data["generated_text"]
-    #else:
-    #    # Handle the case where the "generated_texts" key is missing
-    #    logging.error("Missing 'generated_texts' key in LLM response")
-    #    return "An error occurred while processing the document."
+
     print("Generated!")
     return response.text
 
-
-class UploadDocument(Resource):
-    def post(self):
-        try:
-            print("Function is working!!!!")
-            # Get uploaded file and form data
-            document = request.files.get('document')
-            grant_purpose = request.form['grant_purpose']
-            target_audience = request.form['target_audience']
-            required_funds = request.form['required_funds']
-
-            if document:
-                filename = secure_filename(document.filename)
-                filepath = os.path.join(upload_directory, filename)
-                document.save(filepath)
-
-                # Process the file based on extension (modify as needed)
-                if filepath.endswith('.pdf'):
-                    with open(filepath, 'rb') as pdf_file:
-                        pdf_reader = PyPDF2.PdfReader(pdf_file)
-                        text = pdf_reader.pages[0].extract_text()
-                elif filepath.endswith('.docx'):
-                    print("It's a doc!")
-                    doc = docx.Document(filepath)
-                    text = ''.join([paragraph.text for paragraph in doc.paragraphs])
-                else:
-                    return jsonify({'error': 'Unsupported file format'}), 400
-
-                # Generate grant application
-                generated_text = generate_grant_application(text, grant_purpose, target_audience, required_funds)
-
-                # Return JSON response with generated text
-                return jsonify({'generated_text': generated_text})
-            else:
-                return jsonify({'error': 'No file uploaded'}), 400
-
-        except Exception as e:
-            logging.error(f"Error processing document: {e}")
-            return jsonify({'error': 'An error occurred while processing the document'}), 500
-
-
-api.add_resource(UploadDocument, '/upload')
 
 if __name__ == '__main__':
     app.run(debug=True)
